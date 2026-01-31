@@ -10,8 +10,6 @@ export const registry = {
 
   collisions: (c = []) => Array.from(c),
 
-  keyboard: (k = new Map()) => k,
-
   position: (v = new Vector(0, 0)) =>
     v instanceof Vector ? v : new Vector(v.x ?? 0, v.y ?? 0),
 
@@ -32,7 +30,7 @@ export const registry = {
   }),
 
   collider: (o = {}) => ({
-    type: 'circle',
+    type: 'circle', // 'circle' | 'aabb'
     layer: 1,
     mask: 65535,
     ...o,
@@ -80,6 +78,7 @@ export const registry = {
   }),
 
   group: (g = new Set()) => g,
+
   groupRef: (ref = -1) => ref,
 
   constraint: (o = {}) => ({

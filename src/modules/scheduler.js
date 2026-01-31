@@ -1,6 +1,8 @@
 const defaults = {
   timestep: 1 / 60,
   panicThreshold: 100,
+  onFixed: null,
+  onFrame: null,
 };
 
 export class Scheduler {
@@ -15,6 +17,8 @@ export class Scheduler {
 
   #timestep;
   #panicThreshold;
+  #onFixed;
+  #onFrame;
 
   tick = (ts) => {
     if (!this.#running) return;
@@ -27,6 +31,7 @@ export class Scheduler {
     let count = 0;
     while (this.#delta >= this.#timestep) {
       this.#fixed.forEach((system) => system.tick(this.#timestep));
+      if (this.#onFixed) this.#onFixed(this.#timestep);
       this.#delta -= this.#timestep;
 
       if (++count >= this.#panicThreshold) {
@@ -36,6 +41,7 @@ export class Scheduler {
     }
 
     this.#frame.forEach((system) => system.tick(ts));
+    if (this.#onFrame) this.#onFrame(ts);
     this.#rafId = requestAnimationFrame(this.tick);
   };
 
@@ -53,6 +59,8 @@ export class Scheduler {
     const cfg = { ...defaults, ...opts };
     this.#timestep = cfg.timestep;
     this.#panicThreshold = cfg.panicThreshold;
+    this.#onFixed = cfg.onFixed;
+    this.#onFrame = cfg.onFrame;
 
     document.addEventListener('visibilitychange', this.#onVisibilityChange);
   }

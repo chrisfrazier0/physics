@@ -43,29 +43,35 @@
     <canvas id="canvas"></canvas>
     <script type="module">
 
-  import { registry } from '../src/components/registry.js';
-  import { BruteForceDetector } from '../src/lib/detector.js';
-  import { Scheduler } from '../src/modules/scheduler.js';
-  import { EntityManager } from '../src/modules/manager.js';
-  import { Vector } from '../src/modules/vector.js';
-  import { RenderSystem } from '../src/systems/render.js';
-  import { PhysicsSystem } from '../src/systems/physics.js';
-  import { KeyboardSystem } from '../src/systems/keyboard.js';
+import { registry } from '../src/components/registry.js';
+import { BruteForceDetector } from '../src/lib/detector.js';
+import { Keyboard } from '../src/lib/keyboard.js';
+import { Scheduler } from '../src/modules/scheduler.js';
+import { Vector } from '../src/modules/vector.js'
+import { EntityManager } from '../src/modules/manager.js';
+import { Scene, SceneManager } from '../src/modules/scene.js';
+import { RenderSystem } from '../src/systems/render.js';
+import { PhysicsSystem } from '../src/systems/physics.js';
 
-  const ready = (fn) =>
-    document.readyState !== 'loading'
-      ? fn(window)
-      : document.addEventListener('DOMContentLoaded', () => fn(window));
+class MainScene extends Scene {
+  moveForce = 6;
+  jumpImpulse = 2.6;
 
-  ready((global) => {
-    const em = new EntityManager(registry);
-    const worldId = em.spawn({
+  constructor({ scenes, canvas }) {
+    super();
+    this.scenes = scenes;
+    this.canvas = canvas;
+  }
+
+  create() {
+    this.em = new EntityManager(registry);
+
+    this.worldId = this.em.spawn({
       world: { width: 1.8, height: 1 },
-      collisions: null,
-      keyboard: null,
+      collisions: [],
     });
 
-    const ball = em.spawn({
+    this.ball = this.em.spawn({
       position: { x: 0.3, y: 0.035 },
       body: {
         vxMax: 1.4,
@@ -80,115 +86,183 @@
       sleep: {},
     });
 
-    const rockSpec = {
+    const rock = {
       body: {},
       collider: { type: 'aabb' },
       render: { color: 'hsl(210,15%,32%)' },
     };
 
-    em.spawn({
-      ...rockSpec,
-      position: { x: 0.8, y: 0.1 },
-      aabb: { halfWidth: 0.14, halfHeight: 0.1 },
-    });
-    em.spawn({
-      ...rockSpec,
-      position: { x: 1.139, y: 0.2 },
-      aabb: { halfWidth: 0.2, halfHeight: 0.2 },
-    });
-    em.spawn({
-      ...rockSpec,
-      position: { x: 1.59, y: 0.3 },
-      aabb: { halfWidth: 0.1, halfHeight: 0.3 },
-    });
-    em.spawn({
-      ...rockSpec,
-      position: { x: 0, y: 0 },
-      collider: {},
-      circle: { radius: 0.125 },
-    });
+    this.em.spawn({ ...rock, position: { x: 0.8, y: 0.1 }, aabb: { halfWidth: 0.14, halfHeight: 0.1 } });
+    this.em.spawn({ ...rock, position: { x: 1.139, y: 0.2 }, aabb: { halfWidth: 0.2, halfHeight: 0.2 } });
+    this.em.spawn({ ...rock, position: { x: 1.59, y: 0.3 }, aabb: { halfWidth: 0.1, halfHeight: 0.3 } });
+    this.em.spawn({ ...rock, position: { x: 0, y: 0 }, circle: { radius: 0.125 }, collider: {} });
 
-    const controls = {
-      moveForce: 6,
-      jumpImpulse: 2.6,
-      jumpBlocked: false,
-
-      tick() {
-        const pos = em.getComponent(ball, 'position');
-        const body = em.getComponent(ball, 'body');
-        const keys = em.getComponent(worldId, 'keyboard');
-        const collisions = em.getComponent(worldId, 'collisions');
-
-        if (keys.get('ShiftRight')?.down) {
-          pos.x = 0.3;
-          pos.y = 0.035;
-        }
-
-        if (keys.get('ArrowLeft')?.down) body.force.x -= controls.moveForce;
-        if (keys.get('ArrowRight')?.down) body.force.x += controls.moveForce;
-
-        let grounded = false;
-        for (const c of collisions) {
-          if (c.a === ball && c.normal.y < -0.5) {
-            grounded = true;
-            break;
-          } else if (c.b === ball && c.normal.y > 0.5) {
-            grounded = true;
-            break;
-          }
-        }
-
-        if (!grounded) {
-          controls.jumpBlocked = false;
-        }
-
-        if (keys.get('Space')?.down && grounded && !controls.jumpBlocked) {
-          body.impulse.y += controls.jumpImpulse;
-          controls.jumpBlocked = true;
-        }
-      },
-    };
-
-    const keyboard = new KeyboardSystem({ em, worldId });
-    const canvas = document.getElementById('canvas');
-    const render = new RenderSystem({ em, worldId, canvas });
-    const detector = new BruteForceDetector();
-    const physics = new PhysicsSystem({ em, worldId, detector });
-
-    const scheduler = new Scheduler()
-      .fixedSystem(keyboard)
-      .fixedSystem(controls)
-      .fixedSystem(physics)
-      .frameSystem(render)
-      .start();
-
-    // expose to browser console for debugging
-    global.registry = registry;
-    global.em = em;
-    global.render = render;
-    global.physics = physics;
-    global.keyboard = keyboard;
-    global.scheduler = scheduler;
-
-    const text = em.spawn({
+    const text = this.em.spawn({
       position: { x: 0.9, y: 0.5 },
       render: { color: '#DEDEDE', zIndex: 999 },
       text: {
-        value: 'ARROW KEYS + SPACE',
+        value: 'ARROW KEYS',
         fit: true,
         weight: 'bold',
         alpha: 0.45,
       },
     });
 
-    const onKeyDown = (e) => {
-      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'Space') {
-        window.removeEventListener('keydown', onKeyDown);
-        em.destroyEntity(text);
-      }
+    this.onKeyDown = () => {
+      window.removeEventListener('keydown', this.onKeyDown);
+      this.em.destroyEntity(text);
     };
-    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', this.onKeyDown);
+
+    this.detector = new BruteForceDetector();
+    this.physics = new PhysicsSystem({
+      em: this.em,
+      worldId: this.worldId,
+      detector: this.detector,
+    });
+
+    this.renderSystem = new RenderSystem({
+      em: this.em,
+      worldId: this.worldId,
+      canvas: this.canvas,
+    });
+
+    this.jumpBlocked = false;
+  }
+
+  input(kb) {
+    if (kb.pressed('KeyP')) {
+      this.scenes.pushLater(new PauseScene({ scenes: this.scenes, canvas: this.canvas }));
+      return;
+    }
+
+    const em = this.em;
+    const ball = this.ball;
+    const pos = em.getComponent(ball, 'position');
+    const body = em.getComponent(ball, 'body');
+    const collisions = em.getComponent(this.worldId, 'collisions');
+
+    if (kb.pressed('KeyR')) {
+      pos.x = 0.3;
+      pos.y = 0.035;
+      body.vel.x = body.vel.y = 0;
+    }
+
+    if (kb.isDown('ArrowLeft')) body.force.x -= this.moveForce;
+    if (kb.isDown('ArrowRight')) body.force.x += this.moveForce;
+
+    let grounded = false;
+    for (const c of collisions) {
+      if (c.a === ball && c.normal.y < -0.5) grounded = true;
+      if (c.b === ball && c.normal.y > 0.5) grounded = true;
+    }
+
+    if (!grounded) this.jumpBlocked = false;
+
+    if (kb.isDown('Space') && grounded && !this.jumpBlocked) {
+      body.impulse.y += this.jumpImpulse;
+      this.jumpBlocked = true;
+    }
+  }
+
+  fixed(dt) {
+    this.physics.tick(dt);
+  }
+
+  render(ts) {
+    this.renderSystem.tick();
+  }
+
+  destroy() {
+    window.removeEventListener('keydown', this.onKeyDown);
+    this.renderSystem.destroy();
+  }
+}
+
+class PauseScene extends Scene {
+  blocksInput = true;
+  blocksUpdate = true;
+
+  constructor({ scenes, canvas }) {
+    super();
+    this.scenes = scenes;
+    this.canvas = canvas;
+  }
+
+  input(kb) {
+    if (kb.pressed('KeyP') || kb.pressed('Escape')) {
+      this.scenes.popLater();
+    }
+  }
+
+  render() {
+    const ctx = this.canvas.getContext('2d');
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    ctx.save();
+
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+
+    const text = 'PAUSED';
+    const pad = 0.18;
+
+    const maxW = w * (1 - pad * 2);
+    const maxH = h * (1 - pad * 2);
+
+    const sample = 100;
+    ctx.globalAlpha = 0.55;
+    ctx.font = `800 ${sample}px system-ui, sans-serif`;
+
+    const m = ctx.measureText(text);
+    const textW = m.width || 1;
+    const textH =
+      (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || sample;
+
+    const scale = Math.min(maxW / textW, maxH / textH);
+    const fontSize = Math.floor(sample * scale);
+
+    ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, w / 2, h / 2);
+
+    ctx.restore();
+  }
+}
+
+const ready = (fn) =>
+  document.readyState !== 'loading'
+    ? fn(window)
+    : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+ready((global) => {
+  const canvas = document.getElementById('canvas');
+  const kb = new Keyboard();
+  const scenes = new SceneManager();
+
+  scenes.push(new MainScene({ scenes, canvas }));
+
+  const scheduler = new Scheduler({
+    onFixed: (dt) => {
+      kb.tick();
+      scenes
+        .input(kb)
+        .flush()
+        .fixed(dt);
+    },
+    onFrame: () => scenes.render(),
   });
+  scheduler.start();
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.scheduler = scheduler;
+  global.scenes = scenes;
+});
 
     </script>
     <a href="../index.html" class="back">←</a>
