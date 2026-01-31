@@ -61,6 +61,7 @@
     const em = new EntityManager(registry);
     const worldId = em.spawn({
       world: { width: 1.8, height: 1 },
+      collisions: null,
       keyboard: null,
     });
 
@@ -116,7 +117,7 @@
         const pos = em.getComponent(ball, 'position');
         const body = em.getComponent(ball, 'body');
         const keys = em.getComponent(worldId, 'keyboard');
-        const world = em.getComponent(worldId, 'world');
+        const collisions = em.getComponent(worldId, 'collisions');
 
         if (keys.get('ShiftRight')?.down) {
           pos.x = 0.3;
@@ -127,7 +128,7 @@
         if (keys.get('ArrowRight')?.down) body.force.x += controls.moveForce;
 
         let grounded = false;
-        for (const c of world.collisionEvents) {
+        for (const c of collisions) {
           if (c.a === ball && c.normal.y < -0.5) {
             grounded = true;
             break;

@@ -5,9 +5,10 @@ export const registry = {
     width: 1,
     height: 1,
     time: 0,
-    collisionEvents: [],
     ...o,
   }),
+
+  collisions: (c = []) => Array.from(c),
 
   keyboard: (k = new Map()) => k,
 

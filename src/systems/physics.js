@@ -29,6 +29,7 @@ export class PhysicsSystem {
 
   #em;
   #world;
+  #collisions;
   #detector;
 
   #emitContact = (a, b, tag, normal, penetration) => {
@@ -47,6 +48,7 @@ export class PhysicsSystem {
   constructor({ em, worldId, detector, ...opts }) {
     this.#em = em;
     this.#world = em.getComponent(worldId, 'world');
+    this.#collisions = em.getComponent(worldId, 'collisions');
     this.#detector = detector;
     this.configure(opts);
   }
@@ -194,12 +196,12 @@ export class PhysicsSystem {
   }
 
   #endContactFrame() {
-    const events = this.#world.collisionEvents;
-    events.length = 0;
+    const events = this.#collisions;
+    if (events) events.length = 0;
 
     for (const [key, c] of this.#contacts) {
       if (c.seenAt !== this.#frame) this.#contacts.delete(key);
-      else events.push(c);
+      else if (events) events.push(c);
     }
   }
 
