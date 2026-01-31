@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Sim - Test 4</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      #canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      .back {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 9999;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(20,20,22,0.85);
+        color: hsl(0, 0%, 80%);
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .back:hover {
+        background: rgba(30,30,34,0.95);
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+
+import { registry } from '../src/components/registry.js';
+import { BruteForceDetector } from '../src/lib/detector.js';
+import { Scheduler } from '../src/modules/scheduler.js';
+import { EntityManager } from '../src/modules/manager.js';
+import { RenderSystem } from '../src/systems/render.js';
+import { PhysicsSystem } from '../src/systems/physics.js';
+
+const ready = (fn) =>
+  document.readyState !== 'loading'
+    ? fn(window)
+    : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+ready((global) => {
+  const canvas = document.getElementById('canvas');
+  const em = new EntityManager(registry);
+  const worldId = em.spawn({ world: { width: 1.8, height: 1 } });
+
+  const render = new RenderSystem({ em, worldId, canvas });
+  const detector = new BruteForceDetector();
+  const physics = new PhysicsSystem({
+    em,
+    worldId,
+    detector,
+    solver: {
+      warmStartFactor: 0.85,
+      slop: 0.003,
+    },
+  });
+
+  const scheduler = new Scheduler()
+    .fixedSystem(physics)
+    .frameSystem(render)
+    .start();
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.em = em;
+  global.render = render;
+  global.physics = physics;
+  global.scheduler = scheduler;
+
+  const sleep = em.spawn({ sleep: null, group: null });
+  const group = em.getComponent(sleep, 'group');
+  const defaults = {
+    circle: { radius: 0.035 },
+    body: { invMass: 1 / 0.035, restitution: 0, groundDrag: 0.02 },
+    collider: {},
+    render: { color: 'hsl(40,60%,50%)' },
+    groupRef: sleep,
+  };
+
+  for (let i = 0; i < 14; i++) {
+    const id = em.spawn({
+      ...defaults,
+      position: {
+        x: 1.2,
+        y: 0.035 + 0.07 * i,
+      },
+    });
+    group.add(id);
+  }
+
+  delete defaults.groupRef;
+  const ball = em.spawn({
+    ...defaults,
+    position: { x: 0.3, y: 0.035 },
+    sleep: {},
+  })
+
+  const text = em.spawn({
+    position: { x: 0.9, y: 0.5 },
+    render: { color: '#DEDEDE', zIndex: 999 },
+    text: {
+      value: 'CLICK ME',
+      fit: true,
+      weight: 'bold',
+      alpha: 0.45,
+    },
+  });
+
+  const handleClick = () => {
+    canvas.removeEventListener('click', handleClick);
+    em.destroyEntity(text);
+
+    const body = em.getComponent(ball, 'body');
+    body.impulse.x = 0.15;
+    body.impulse.y = Math.random() * 0.2;
+  };
+  canvas.addEventListener('click', handleClick);
+});
+
+    </script>
+    <a href="../index.html" class="back">←</a>
+  </body>
+</html>

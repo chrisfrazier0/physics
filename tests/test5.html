@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Sim - Test 5</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      #canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      .back {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 9999;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(20,20,22,0.85);
+        color: hsl(0, 0%, 80%);
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .back:hover {
+        background: rgba(30,30,34,0.95);
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+
+import { registry } from '../src/components/registry.js';
+import { BruteForceDetector } from '../src/lib/detector.js';
+import { Scheduler } from '../src/modules/scheduler.js';
+import { EntityManager } from '../src/modules/manager.js';
+import { RenderSystem } from '../src/systems/render.js';
+import { PhysicsSystem } from '../src/systems/physics.js';
+
+const ready = (fn) =>
+  document.readyState !== 'loading'
+    ? fn(window)
+    : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+ready((global) => {
+  const canvas = document.getElementById('canvas');
+  const em = new EntityManager(registry);
+  const worldId = em.spawn({ world: { width: 1.8, height: 1 } });
+
+  const render = new RenderSystem({ em, worldId, canvas });
+  const detector = new BruteForceDetector();
+  const physics = new PhysicsSystem({
+    em,
+    worldId,
+    detector,
+    solver: {
+      warmStartFactor: 0.9,
+      slop: 0.001,
+    },
+  });
+
+  const scheduler = new Scheduler()
+    .fixedSystem(physics)
+    .frameSystem(render)
+    .start();
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.em = em;
+  global.render = render;
+  global.physics = physics;
+  global.scheduler = scheduler;
+
+  const defaults = {
+    circle: { radius: 0.035 },
+    body: { invMass: 1 / 0.035, restitution: 0 },
+    collider: {},
+  };
+
+  // --- Pendulum Test ---
+  const pendAnchor = em.spawn({
+    ...defaults,
+    position: { x: 0.3, y: 0.75 },
+    render: { color: 'hsl(210,15%,32%)' },
+    body: {},
+  });
+  const pendWeight = em.spawn({
+    ...defaults,
+    position: { x: 0.15, y: 0.45 },
+    render: { color: 'hsl(40,60%,50%)' },
+  });
+  em.spawn({
+    constraint: {
+      a: pendAnchor,
+      b: pendWeight,
+      dist: Math.sqrt(0.15 * 0.15 + 0.3 * 0.3),
+    },
+    render: { color: '#DEDEDE' }
+  });
+
+  // --- Square Test ---
+  square({ centerX: 0.7, centerY: 0.75 });
+
+  // --- Buffer Test ---
+  const ball1 = em.spawn({
+    ...defaults,
+    position: { x: 1.1, y: 0.75 },
+    render: { color: 'hsl(40,60%,50%)' },
+  });
+  const ball2 = em.spawn({
+    ...defaults,
+    position: { x: 1.1, y: 0.035 },
+    render: { color: 'hsl(40,60%,50%)' },
+  });
+  em.spawn({
+    constraint: {
+      mode: 'buffer',
+      a: ball1,
+      b: ball2,
+      dist: 0.15,
+    },
+  });
+
+  // --- Rope Test ---
+  const ropeAnchor = em.spawn({
+    ...defaults,
+    position: { x: 1.5, y: 0.75 },
+    render: { color: 'hsl(210,15%,32%)' },
+    body: {},
+  });
+  const ropeWeight = em.spawn({
+    ...defaults,
+    position: { x: 1.51, y: 0.9 },
+    render: { color: 'hsl(40,60%,50%)' },
+    body: { invMass: 1 / 0.035, restitution: 0.8 },
+  });
+  em.spawn({
+    constraint: {
+      mode: 'rope',
+      a: ropeAnchor,
+      b: ropeWeight,
+      dist: 0.35,
+    },
+    render: { color: '#DEDEDE' }
+  });
+
+  function square ({ centerX, centerY, sideLength = 0.2, rotationAngle = 20 }) {
+    const angle = (rotationAngle * Math.PI) / 180;
+    const halfDiag = (sideLength * Math.sqrt(2)) / 2;
+    const sleep = em.spawn({ sleep: null, group: null });
+
+    const a = em.spawn({
+      ...defaults,
+      circle: { radius: 0.015 },
+      render: { color: 'hsl(40,60%,50%)' },
+      position: {
+        x: centerX + halfDiag * Math.cos(angle),
+        y: centerY + halfDiag * Math.sin(angle),
+      },
+      groupRef: sleep,
+    });
+    const b = em.spawn({
+      ...defaults,
+      circle: { radius: 0.015 },
+      render: { color: 'hsl(40,60%,50%)' },
+      position: {
+        x: centerX + halfDiag * Math.cos(angle + Math.PI / 2),
+        y: centerY + halfDiag * Math.sin(angle + Math.PI / 2),
+      },
+      groupRef: sleep,
+    });
+    const c = em.spawn({
+      ...defaults,
+      circle: { radius: 0.015 },
+      render: { color: 'hsl(40,60%,50%)' },
+      position: {
+        x: centerX + halfDiag * Math.cos(angle + Math.PI),
+        y: centerY + halfDiag * Math.sin(angle + Math.PI),
+      },
+      groupRef: sleep,
+    });
+    const d = em.spawn({
+      ...defaults,
+      circle: { radius: 0.015 },
+      render: { color: 'hsl(40,60%,50%)' },
+      position: {
+        x: centerX + halfDiag * Math.cos(angle + (3 * Math.PI) / 2),
+        y: centerY + halfDiag * Math.sin(angle + (3 * Math.PI) / 2),
+      },
+      groupRef: sleep,
+    });
+
+    const group = em.getComponent(sleep, 'group');
+    group.add(a).add(b).add(c).add(d);
+
+    const ids = [];
+    ids.push(em.spawn({ constraint: { a: a, b: b, dist: sideLength } }));
+    ids.push(em.spawn({ constraint: { a: b, b: c, dist: sideLength } }));
+    ids.push(em.spawn({ constraint: { a: c, b: d, dist: sideLength } }));
+    ids.push(em.spawn({ constraint: { a: d, b: a, dist: sideLength } }));
+    ids.push(em.spawn({ constraint: { a: a, b: c, dist: sideLength * Math.sqrt(2) } }));
+    ids.forEach((id) => {
+      em.addComponent(id, 'render', registry.render({ color: '#DEDEDE' }));
+    });
+  }
+});
+
+    </script>
+    <a href="../index.html" class="back">←</a>
+  </body>
+</html>

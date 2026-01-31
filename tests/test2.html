@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Sim - Test 2</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      #canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      .back {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 9999;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(20,20,22,0.85);
+        color: hsl(0, 0%, 80%);
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .back:hover {
+        background: rgba(30,30,34,0.95);
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+
+import { registry } from '../src/components/registry.js';
+import { BruteForceDetector } from '../src/lib/detector.js';
+import { Scheduler } from '../src/modules/scheduler.js';
+import { EntityManager } from '../src/modules/manager.js';
+import { RenderSystem } from '../src/systems/render.js';
+import { PhysicsSystem } from '../src/systems/physics.js';
+
+const ready = (fn) =>
+  document.readyState !== 'loading'
+    ? fn(window)
+    : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+ready((global) => {
+  const canvas = document.getElementById('canvas');
+  const em = new EntityManager(registry);
+  const worldId = em.spawn({ world: { width: 1.8, height: 1 } });
+
+  const render = new RenderSystem({ em, worldId, canvas });
+  const detector = new BruteForceDetector();
+  const physics = new PhysicsSystem({ em, worldId, detector });
+
+  const scheduler = new Scheduler()
+    .fixedSystem(physics)
+    .frameSystem(render)
+    .start();
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.em = em;
+  global.render = render;
+  global.physics = physics;
+  global.scheduler = scheduler;
+
+  const invMass = 1 / 0.035;
+  const defaults = {
+    circle: { radius: 0.035 },
+    collider: {},
+    render: { color: 'hsl(40,60%,50%)' },
+    sleep: {},
+  };
+
+  em.spawn({
+    ...defaults,
+    position: { x: 0.3, y: 0.9 },
+    body: { invMass, restitution: 1 },
+  });
+
+  em.spawn({
+    ...defaults,
+    position: { x: 0.6, y: 0.9 },
+    body: { invMass, restitution: 0.8 },
+  });
+
+  em.spawn({
+    ...defaults,
+    position: { x: 0.9, y: 0.9 },
+    body: { invMass, restitution: 0.7 },
+  });
+
+  em.spawn({
+    ...defaults,
+    position: { x: 1.2, y: 0.9 },
+    body: { invMass, restitution: 0.6 },
+  });
+
+  em.spawn({
+    ...defaults,
+    position: { x: 1.5, y: 0.9 },
+    body: { invMass, restitution: 0 },
+  });
+});
+
+    </script>
+    <a href="../index.html" class="back">←</a>
+  </body>
+</html>

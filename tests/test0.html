@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Sim - Test 0</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      #canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      .back {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 9999;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(20,20,22,0.85);
+        color: hsl(0, 0%, 80%);
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .back:hover {
+        background: rgba(30,30,34,0.95);
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+
+  import { registry } from '../src/components/registry.js';
+  import { BruteForceDetector } from '../src/lib/detector.js';
+  import { Scheduler } from '../src/modules/scheduler.js';
+  import { EntityManager } from '../src/modules/manager.js';
+  import { Vector } from '../src/modules/vector.js';
+  import { RenderSystem } from '../src/systems/render.js';
+  import { PhysicsSystem } from '../src/systems/physics.js';
+  import { KeyboardSystem } from '../src/systems/keyboard.js';
+
+  const ready = (fn) =>
+    document.readyState !== 'loading'
+      ? fn(window)
+      : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+  ready((global) => {
+    const em = new EntityManager(registry);
+    const worldId = em.spawn({
+      world: { width: 1.8, height: 1 },
+      keyboard: null,
+    });
+
+    const ball = em.spawn({
+      position: { x: 0.3, y: 0.035 },
+      body: {
+        vxMax: 1.4,
+        vyMax: 2.05,
+        invMass: 1,
+        restitution: 0,
+        groundDrag: 0.15,
+      },
+      collider: {},
+      circle: { radius: 0.035 },
+      render: { color: 'hsl(40,60%,50%)', zIndex: 2 },
+      sleep: {},
+    });
+
+    const rockSpec = {
+      body: {},
+      collider: { type: 'aabb' },
+      render: { color: 'hsl(210,15%,32%)' },
+    };
+
+    em.spawn({
+      ...rockSpec,
+      position: { x: 0.8, y: 0.1 },
+      aabb: { halfWidth: 0.14, halfHeight: 0.1 },
+    });
+    em.spawn({
+      ...rockSpec,
+      position: { x: 1.139, y: 0.2 },
+      aabb: { halfWidth: 0.2, halfHeight: 0.2 },
+    });
+    em.spawn({
+      ...rockSpec,
+      position: { x: 1.59, y: 0.3 },
+      aabb: { halfWidth: 0.1, halfHeight: 0.3 },
+    });
+    em.spawn({
+      ...rockSpec,
+      position: { x: 0, y: 0 },
+      collider: {},
+      circle: { radius: 0.125 },
+    });
+
+    const controls = {
+      moveForce: 6,
+      jumpImpulse: 2.6,
+      jumpBlocked: false,
+
+      tick() {
+        const pos = em.getComponent(ball, 'position');
+        const body = em.getComponent(ball, 'body');
+        const keys = em.getComponent(worldId, 'keyboard');
+        const world = em.getComponent(worldId, 'world');
+
+        if (keys.get('ShiftRight')?.down) {
+          pos.x = 0.3;
+          pos.y = 0.035;
+        }
+
+        if (keys.get('ArrowLeft')?.down) body.force.x -= controls.moveForce;
+        if (keys.get('ArrowRight')?.down) body.force.x += controls.moveForce;
+
+        let grounded = false;
+        for (const c of world.collisionEvents) {
+          if (c.a === ball && c.normal.y < -0.5) {
+            grounded = true;
+            break;
+          } else if (c.b === ball && c.normal.y > 0.5) {
+            grounded = true;
+            break;
+          }
+        }
+
+        if (!grounded) {
+          controls.jumpBlocked = false;
+        }
+
+        if (keys.get('Space')?.down && grounded && !controls.jumpBlocked) {
+          body.impulse.y += controls.jumpImpulse;
+          controls.jumpBlocked = true;
+        }
+      },
+    };
+
+    const keyboard = new KeyboardSystem({ em, worldId });
+    const canvas = document.getElementById('canvas');
+    const render = new RenderSystem({ em, worldId, canvas });
+    const detector = new BruteForceDetector();
+    const physics = new PhysicsSystem({ em, worldId, detector });
+
+    const scheduler = new Scheduler()
+      .fixedSystem(keyboard)
+      .fixedSystem(controls)
+      .fixedSystem(physics)
+      .frameSystem(render)
+      .start();
+
+    // expose to browser console for debugging
+    global.registry = registry;
+    global.em = em;
+    global.render = render;
+    global.physics = physics;
+    global.keyboard = keyboard;
+    global.scheduler = scheduler;
+
+    const text = em.spawn({
+      position: { x: 0.9, y: 0.5 },
+      render: { color: '#DEDEDE', zIndex: 999 },
+      text: {
+        value: 'ARROW KEYS + SPACE',
+        fit: true,
+        weight: 'bold',
+        alpha: 0.45,
+      },
+    });
+
+    const onKeyDown = (e) => {
+      if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || e.code === 'Space') {
+        window.removeEventListener('keydown', onKeyDown);
+        em.destroyEntity(text);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+  });
+
+    </script>
+    <a href="../index.html" class="back">←</a>
+  </body>
+</html>
