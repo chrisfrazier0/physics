@@ -44,7 +44,6 @@ export class EntityManager {
   }
 
   spawn(spec = {}) {
-    if (!this.registry) throw new Error('no registry provided');
     const id = this.createEntity();
     for (const [name, arg] of Object.entries(spec)) {
       const ctor = this.registry[name];
@@ -67,7 +66,6 @@ export class EntityManager {
     const base = stores[baseIdx];
 
     outer: for (const id of base.keys()) {
-      if (!this.#entities.has(id)) continue;
       for (let i = 0; i < stores.length; i++) {
         if (i === baseIdx) continue;
         if (!stores[i].has(id)) continue outer;
@@ -88,7 +86,6 @@ export class EntityManager {
     const base = stores[baseIdx];
 
     outer: for (const id of base.keys()) {
-      if (!this.#entities.has(id)) continue;
       const row = new Array(types.length + 1);
       row[0] = id;
       for (let i = 0; i < stores.length; i++) {

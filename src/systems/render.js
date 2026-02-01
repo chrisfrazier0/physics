@@ -1,66 +1,29 @@
 import { getSleep } from '../lib/sleep.js';
-
-const defaults = {
-  clip: true,
-  oobBackground: '#111111',
-  worldBackground: '#212121',
-  wireframe: false,
-  debugSleep: false,
-};
-
-function makeBucket() {
-  return {
-    texts: [],
-    lines: [],
-    circles: [],
-    aabbs: [],
-  };
-}
+import { required } from '../modules/required.js';
 
 export class RenderSystem {
-  #cfg = { ...defaults };
+  #cfg = {
+    em: required,
+    canvas: required,
+
+    clip: true,
+    oobBackground: '#111111',
+    worldBackground: '#212121',
+    wireframe: false,
+    debugSleep: false,
+  };
+
   #zoom = 100;
   #ox = 0;
   #oy = 0;
   #buckets = new Map();
   #bucketKeys = new Set();
 
-  #canvas;
-  #ctx;
-  #em;
-  #world;
-
-  updateCanvas = () => {
-    const c = this.#canvas;
-    c.width = c.clientWidth;
-    c.height = c.clientHeight;
-
-    const sx = c.width / this.#world.width;
-    const sy = c.height / this.#world.height;
-    this.#zoom = Math.min(sx, sy);
-
-    const worldPxW = this.#world.width * this.#zoom;
-    const worldPxH = this.#world.height * this.#zoom;
-    this.#ox = (c.width - worldPxW) / 2;
-    this.#oy = (c.height + worldPxH) / 2;
-  };
-
-  constructor({ em, worldId, canvas, ...opts }) {
-    this.#canvas = canvas;
-    this.#ctx = canvas.getContext('2d');
-    this.#em = em;
-    this.#world = em.getComponent(worldId, 'world');
+  constructor(opts) {
     this.configure(opts);
-
-    this.updateCanvas();
-    window.addEventListener('resize', this.updateCanvas);
   }
 
-  destroy() {
-    window.removeEventListener('resize', this.updateCanvas);
-  }
-
-  configure(patch = {}) {
+  configure(patch) {
     this.#cfg = { ...this.#cfg, ...patch };
     return this;
   }
@@ -77,6 +40,16 @@ export class RenderSystem {
     return this.#oy - y * this.#zoom;
   }
 
+  #bucket(zIndex) {
+    let b = this.#buckets.get(zIndex);
+    if (!b) {
+      b = { texts: [], lines: [], circles: [], aabbs: [] };
+      this.#buckets.set(zIndex, b);
+    }
+    this.#bucketKeys.add(zIndex);
+    return b;
+  }
+
   #resetBuckets() {
     for (const b of this.#buckets.values()) {
       b.texts.length = 0;
@@ -87,20 +60,10 @@ export class RenderSystem {
     this.#bucketKeys.clear();
   }
 
-  #bucket(zIndex) {
-    let b = this.#buckets.get(zIndex);
-    if (!b) {
-      b = makeBucket();
-      this.#buckets.set(zIndex, b);
-    }
-    this.#bucketKeys.add(zIndex);
-    return b;
-  }
-
   #shouldWire(id) {
     if (this.#cfg.wireframe) return true;
     if (!this.#cfg.debugSleep) return false;
-    return getSleep(this.#em, id).isSleeping;
+    return getSleep(this.#cfg.em, id).isSleeping;
   }
 
   #drawText(ctx, worldPxW, worldPxH, render, pos, text) {
@@ -178,17 +141,40 @@ export class RenderSystem {
     else ctx.fillRect(x, yTop, w, h);
   }
 
-  tick() {
-    const em = this.#em;
-    const ctx = this.#ctx;
-    const z = this.#zoom;
+  resizeCanvas(world) {
+    const c = this.#cfg.canvas;
+    c.width = c.clientWidth;
+    c.height = c.clientHeight;
+
+    const sx = c.width / world.width;
+    const sy = c.height / world.height;
+    this.#zoom = Math.min(sx, sy);
+
+    const worldPxW = world.width * this.#zoom;
+    const worldPxH = world.height * this.#zoom;
+    this.#ox = (c.width - worldPxW) / 2;
+    this.#oy = (c.height + worldPxH) / 2;
+  }
+
+  tick(context) {
+    const em = this.#cfg.em;
+    const canvas = this.#cfg.canvas;
+    const world = context?.world ?? { width: 1, height: 1 };
+    const ctx = canvas.getContext('2d');
+
+    if (
+      canvas.width !== canvas.clientWidth ||
+      canvas.height !== canvas.clientHeight
+    ) {
+      this.resizeCanvas(world);
+    }
 
     // oob background
     ctx.fillStyle = this.#cfg.oobBackground;
-    ctx.fillRect(0, 0, this.#canvas.width, this.#canvas.height);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    const worldPxW = this.#world.width * z;
-    const worldPxH = this.#world.height * z;
+    const worldPxW = world.width * this.#zoom;
+    const worldPxH = world.height * this.#zoom;
     const worldX = this.#ox;
     const worldY = this.#oy - worldPxH;
 

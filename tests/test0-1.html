@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Physics Sim - Test 2</title>
+    <title>Physics Sim - Test 0-1</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
     <style>
       * {
@@ -53,6 +53,7 @@ import { Scheduler } from '../src/modules/scheduler.js';
 import { EntityManager } from '../src/modules/manager.js';
 import { RenderSystem } from '../src/systems/render.js';
 import { PhysicsSystem } from '../src/systems/physics.js';
+import { KeyboardSystem } from '../src/systems/keyboard.js';
 
 const ready = (fn) =>
   document.readyState !== 'loading'
@@ -61,48 +62,76 @@ const ready = (fn) =>
 
 ready((global) => {
   const em = new EntityManager(registry);
-  const invMass = 1 / 0.035;
-  const defaults = {
-    circle: { radius: 0.035 },
+  const ball = em.spawn({
+    position: { x: 0.3, y: 0.035 },
+    body: {
+      vxMax: 1.4,
+      vyMax: 2.05,
+      invMass: 1,
+      restitution: 0,
+      groundDrag: 0.15,
+    },
     collider: {},
-    render: { color: 'hsl(40,60%,50%)' },
+    circle: { radius: 0.035 },
+    render: { color: 'hsl(40,60%,50%)', zIndex: 2 },
     sleep: {},
-  };
+  });
 
-  em.spawn({
-    ...defaults,
-    position: { x: 0.3, y: 0.9 },
-    body: { invMass, restitution: 1 },
-  });
-  em.spawn({
-    ...defaults,
-    position: { x: 0.6, y: 0.9 },
-    body: { invMass, restitution: 0.8 },
-  });
-  em.spawn({
-    ...defaults,
-    position: { x: 0.9, y: 0.9 },
-    body: { invMass, restitution: 0.7 },
-  });
-  em.spawn({
-    ...defaults,
-    position: { x: 1.2, y: 0.9 },
-    body: { invMass, restitution: 0.6 },
-  });
-  em.spawn({
-    ...defaults,
-    position: { x: 1.5, y: 0.9 },
-    body: { invMass, restitution: 0 },
-  });
+  const rock = {
+    body: {},
+    collider: { type: 'aabb' },
+    render: { color: 'hsl(210,15%,32%)' },
+  };
+  em.spawn({ ...rock, position: { x: 0.8, y: 0.1 }, aabb: { halfWidth: 0.14, halfHeight: 0.1 } });
+  em.spawn({ ...rock, position: { x: 1.139, y: 0.2 }, aabb: { halfWidth: 0.2, halfHeight: 0.2 } });
+  em.spawn({ ...rock, position: { x: 1.59, y: 0.3 }, aabb: { halfWidth: 0.1, halfHeight: 0.3 } });
+  em.spawn({ ...rock, position: { x: 0, y: 0 }, circle: { radius: 0.125 }, collider: {} });
+
+  const control = {
+    moveForce: 6,
+    jumpImpulse: 2.6,
+    jumpBlocked: false,
+
+    input(ctx) {
+      const pos = em.getComponent(ball, 'position');
+      const body = em.getComponent(ball, 'body');
+
+      if (ctx.kb.pressed('KeyR')) {
+        pos.set(0.3, 0.035);
+        body.vel.set(0, 0);
+      }
+
+      if (ctx.kb.down('ArrowLeft')) body.force.x -= control.moveForce;
+      if (ctx.kb.down('ArrowRight')) body.force.x += control.moveForce;
+
+      let grounded = false;
+      for (const c of ctx.collisions) {
+        if (c.a === ball && c.normal.y < -0.5) grounded = true;
+        if (c.b === ball && c.normal.y > 0.5) grounded = true;
+      }
+
+      if (!grounded) control.jumpBlocked = false;
+
+      if (ctx.kb.down('Space') && grounded && !control.jumpBlocked) {
+        body.impulse.y += control.jumpImpulse;
+        control.jumpBlocked = true;
+      }
+    },
+  }
 
   const canvas = document.getElementById('canvas');
   const render = new RenderSystem({ em, canvas });
   const detector = new BruteForceDetector();
   const physics = new PhysicsSystem({ em, detector });
+  const kb = new KeyboardSystem();
 
-  const ctx = context({ world: { width: 1.8, height: 1 } });
+  const ctx = context({ kb, world: { width: 1.8, height: 1 } });
   const scheduler = new Scheduler().start({
-    onFixed: (_, dt) => physics.tick(ctx, dt),
+    onFixed: (_, dt) => {
+      kb.tick();
+      control.input(ctx)
+      physics.tick(ctx, dt)
+    },
     onRender: () => render.tick(ctx),
   });
 
@@ -112,6 +141,23 @@ ready((global) => {
   global.render = render;
   global.physics = physics;
   global.scheduler = scheduler;
+
+  const text = em.spawn({
+    position: { x: 0.9, y: 0.5 },
+    render: { color: '#DEDEDE', zIndex: 999 },
+    text: {
+      value: 'ARROW KEYS',
+      fit: true,
+      weight: 'bold',
+      alpha: 0.45,
+    },
+  });
+
+  const onKeyDown = () => {
+    window.removeEventListener('keydown', onKeyDown);
+    em.destroyEntity(text);
+  };
+  window.addEventListener('keydown', onKeyDown);
 });
 
     </script>

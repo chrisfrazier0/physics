@@ -1,154 +1,60 @@
 export class Scene {
-  enabled = true;
-
   blocksInput = false;
   blocksUpdate = false;
   opaque = false;
 
-  create() {}
-  destroy() {}
+  inputDisabled = false;
 
-  onEnter() {}
-  onExit() {}
-  onCovered() {}
-  onUncovered() {}
+  #frame = [];
+  #fixed = [];
+  #render = [];
 
-  input(kb) {}
-  fixed(dt) {}
-  frame(ts) {}
-  render() {}
-}
-
-export class SceneManager {
-  #stack = [];
-  #pending = [];
-
-  top() {
-    return this.#stack[this.#stack.length - 1];
+  constructor(opts = {}) {
+    this.blocksInput = opts.blocksInput ?? this.blocksInput;
+    this.blocksUpdate = opts.blocksUpdate ?? this.blocksUpdate;
+    this.opaque = opts.opaque?? this.opaque;
   }
 
-  push(scene) {
-    const prevTop = this.top();
-    if (prevTop) prevTop.onCovered?.();
+  addFrame(sys)  { this.#frame.push(sys);  return this; }
+  addFixed(sys)  { this.#fixed.push(sys);  return this; }
+  addRender(sys) { this.#render.push(sys); return this; }
 
-    this.#stack.push(scene);
-    scene.create?.();
-    scene.onEnter?.();
+  removeFrame(sys)  { this.#removeAll(this.#frame, sys);  return this; }
+  removeFixed(sys)  { this.#removeAll(this.#fixed, sys);  return this; }
+  removeRender(sys) { this.#removeAll(this.#render, sys); return this; }
 
-    return scene;
-  }
+  clearFrame()  { this.#frame.length  = 0; return this; }
+  clearFixed()  { this.#fixed.length  = 0; return this; }
+  clearRender() { this.#render.length = 0; return this; }
 
-  pop() {
-    const scene = this.#stack.pop();
-    if (!scene) return;
+  onFrame(ctx, dt)  { this.frameInput(ctx, dt);  this.frameTick(ctx, dt);  }
+  onFixed(ctx, dt)  { this.fixedInput(ctx, dt);  this.fixedTick(ctx, dt);  }
+  onRender(ctx, dt) { this.renderInput(ctx, dt); this.renderTick(ctx, dt); }
 
-    scene.onExit?.();
-    scene.destroy?.();
+  frameInput(ctx, dt)  { this.#input(this.#frame,  ctx, dt); }
+  fixedInput(ctx, dt)  { this.#input(this.#fixed,  ctx, dt); }
+  renderInput(ctx, dt) { this.#input(this.#render, ctx, dt); }
 
-    const newTop = this.top();
-    if (newTop) newTop.onUncovered?.();
+  frameTick(ctx, dt)   { this.#tick(this.#frame,  ctx, dt); }
+  fixedTick(ctx, dt)   { this.#tick(this.#fixed,  ctx, dt); }
+  renderTick(ctx, dt)  { this.#tick(this.#render, ctx, dt); }
 
-    return scene;
-  }
-
-  replace(scene) {
-    this.pop();
-    return this.push(scene);
-  }
-
-  pushLater(scene) {
-    this.#pending.push(() => this.push(scene));
-    return scene;
-  }
-
-  popLater() {
-    this.#pending.push(() => this.pop());
-  }
-
-  replaceLater(scene) {
-    this.#pending.push(() => this.replace(scene));
-    return scene;
-  }
-
-  flush() {
-    while (this.#pending.length) {
-      const op = this.#pending.shift();
-      op();
+  #input(list, ctx, dt) {
+    if (this.inputDisabled === true) return;
+    for (const sys of list) {
+      if (sys.enabled !== false) sys.input?.(ctx, dt);
     }
-    return this;
   }
 
-  input(kb) {
-    for (let i = this.#stack.length - 1; i >= 0; i--) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      s.input?.(kb);
-
-      if (s.blocksInput) break;
+  #tick(list, ctx, dt) {
+    for (const sys of list) {
+      if (sys.enabled !== false) sys.tick?.(ctx, dt);
     }
-    return this;
   }
 
-  fixed(dt) {
-    if (this.#stack.length === 0) return;
-
-    let start = 0;
-    for (let i = this.#stack.length - 1; i >= 0; i--) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      if (s.blocksUpdate) {
-        start = i;
-        break;
-      }
+  #removeAll(list, sys) {
+    for (let i = list.length - 1; i >= 0; i--) {
+      if (list[i] === sys) list.splice(i, 1);
     }
-
-    for (let i = start; i < this.#stack.length; i++) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      s.fixed?.(dt);
-    }
-    return this;
-  }
-
-  frame(ts) {
-    if (this.#stack.length === 0) return;
-
-    let start = 0;
-    for (let i = this.#stack.length - 1; i >= 0; i--) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      if (s.blocksUpdate) {
-        start = i;
-        break;
-      }
-    }
-
-    for (let i = start; i < this.#stack.length; i++) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      s.frame?.(ts);
-    }
-    return this;
-  }
-
-  render() {
-    if (this.#stack.length === 0) return;
-
-    let start = 0;
-    for (let i = this.#stack.length - 1; i >= 0; i--) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      if (s.opaque) {
-        start = i;
-        break;
-      }
-    }
-
-    for (let i = start; i < this.#stack.length; i++) {
-      const s = this.#stack[i];
-      if (!s.enabled) continue;
-      s.render?.();
-    }
-    return this;
   }
 }

@@ -2,29 +2,18 @@ import { Vector } from '../modules/vector.js';
 import { WorldBoundary } from './boundary.js';
 import { clamp } from './clamp.js';
 
-const defaults = {
-  boundary: WorldBoundary.ALL,
-  boundaryLayer: 1,
-};
-
 export class BruteForceDetector {
-  #boundary;
-  #boundaryLayer;
-
-  constructor(opts = {}) {
-    const cfg = { ...defaults, ...opts };
-    this.#boundary = cfg.boundary;
-    this.#boundaryLayer = cfg.boundaryLayer;
-  }
-
-  detect({ em, world, emit }) {
+  detect({ em, ctx, emit }) {
     const ids = [...em.query('position', 'collider')];
     for (let i = 0; i < ids.length; i++) {
       const a = ids[i];
       const colA = em.getComponent(a, 'collider');
 
-      if (colA.type === 'circle') this.#circleBoundary(em, world, emit, a);
-      if (colA.type === 'aabb') this.#aabbBoundary(em, world, emit, a);
+      const world = ctx?.world;
+      if (world) {
+        if (colA.type === 'circle') this.#circleBoundary(em, world, emit, a);
+        if (colA.type === 'aabb') this.#aabbBoundary(em, world, emit, a);
+      }
 
       for (let j = i + 1; j < ids.length; j++) {
         const b = ids[j];
@@ -45,18 +34,17 @@ export class BruteForceDetector {
         }
       }
     }
+    return this;
   }
 
   #circleBoundary(em, world, emit, id) {
-    const boundary = this.#boundary;
-    const boundaryLayer = this.#boundaryLayer;
-
     const col = em.getComponent(id, 'collider');
     const pos = em.getComponent(id, 'position');
     const r = em.getComponent(id, 'circle')?.radius;
 
-    if (r == null || !(col.mask & boundaryLayer)) return;
+    if (r == null || !(col.mask & world.boundaryLayer)) return;
 
+    const boundary = world.boundary;
     if (boundary & WorldBoundary.FLOOR) {
       const pen = r - pos.y;
       if (pen >= 0) emit(id, null, 'floor', Vector.DOWN, pen);
@@ -76,20 +64,18 @@ export class BruteForceDetector {
   }
 
   #aabbBoundary(em, world, emit, id) {
-    const boundary = this.#boundary;
-    const boundaryLayer = this.#boundaryLayer;
-
     const col = em.getComponent(id, 'collider');
     const pos = em.getComponent(id, 'position');
     const box = em.getComponent(id, 'aabb');
 
-    if (!box || !(col.mask & boundaryLayer)) return;
+    if (!box || !(col.mask & world.boundaryLayer)) return;
 
     const minX = pos.x - box.halfWidth;
     const maxX = pos.x + box.halfWidth;
     const minY = pos.y - box.halfHeight;
     const maxY = pos.y + box.halfHeight;
 
+    const boundary = world.boundary;
     if (boundary & WorldBoundary.FLOOR) {
       const pen = -minY;
       if (pen >= 0) emit(id, null, 'floor', Vector.DOWN, pen);

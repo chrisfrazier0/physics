@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Physics Sim - Test 0-2</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟡</text></svg>">
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+      html, body {
+        background: #111111;
+      }
+      #canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+      .back {
+        position: fixed;
+        top: 14px;
+        right: 14px;
+        z-index: 9999;
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+        display: grid;
+        place-items: center;
+        background: rgba(20,20,22,0.85);
+        color: hsl(0, 0%, 80%);
+        text-decoration: none;
+        font-size: 18px;
+        font-weight: 600;
+        border: 1px solid rgba(255,255,255,0.08);
+        backdrop-filter: blur(6px);
+      }
+      .back:hover {
+        background: rgba(30,30,34,0.95);
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas id="canvas"></canvas>
+    <script type="module">
+
+import { context } from '../src/components/context.js';
+import { registry } from '../src/components/registry.js';
+import { BruteForceDetector } from '../src/lib/detector.js';
+import { Scheduler } from '../src/modules/scheduler.js';
+import { EntityManager } from '../src/modules/manager.js';
+import { Scene } from '../src/modules/scene.js';
+import { SceneManager } from '../src/modules/scene_manager.js';
+import { RenderSystem } from '../src/systems/render.js';
+import { PhysicsSystem } from '../src/systems/physics.js';
+import { KeyboardSystem } from '../src/systems/keyboard.js';
+
+const ready = (fn) =>
+  document.readyState !== 'loading'
+    ? fn(window)
+    : document.addEventListener('DOMContentLoaded', () => fn(window));
+
+ready((global) => {
+  const kb = new KeyboardSystem();
+  const scenes = new SceneManager().addFixed(kb);
+
+  const em = new EntityManager(registry);
+  const ball = em.spawn({
+    position: { x: 0.3, y: 0.035 },
+    body: {
+      vxMax: 1.4,
+      vyMax: 2.05,
+      invMass: 1,
+      restitution: 0,
+      groundDrag: 0.15,
+    },
+    collider: {},
+    circle: { radius: 0.035 },
+    render: { color: 'hsl(40,60%,50%)', zIndex: 2 },
+    sleep: {},
+  });
+
+  const rock = {
+    body: {},
+    collider: { type: 'aabb' },
+    render: { color: 'hsl(210,15%,32%)' },
+  };
+  em.spawn({ ...rock, position: { x: 0.8, y: 0.1 }, aabb: { halfWidth: 0.14, halfHeight: 0.1 } });
+  em.spawn({ ...rock, position: { x: 1.139, y: 0.2 }, aabb: { halfWidth: 0.2, halfHeight: 0.2 } });
+  em.spawn({ ...rock, position: { x: 1.59, y: 0.3 }, aabb: { halfWidth: 0.1, halfHeight: 0.3 } });
+  em.spawn({ ...rock, position: { x: 0, y: 0 }, circle: { radius: 0.125 }, collider: {} });
+
+  const control = {
+    moveForce: 6,
+    jumpImpulse: 2.6,
+    jumpBlocked: false,
+
+    input(ctx) {
+      if (ctx.kb.pressed('KeyP')) {
+        scenes.pushLater(pauseScene);
+        return;
+      }
+
+      const pos = em.getComponent(ball, 'position');
+      const body = em.getComponent(ball, 'body');
+
+      if (ctx.kb.pressed('KeyR')) {
+        pos.set(0.3, 0.035);
+        body.vel.set(0, 0);
+      }
+
+      if (ctx.kb.down('ArrowLeft')) body.force.x -= control.moveForce;
+      if (ctx.kb.down('ArrowRight')) body.force.x += control.moveForce;
+
+      let grounded = false;
+      for (const c of ctx.collisions) {
+        if (c.a === ball && c.normal.y < -0.5) grounded = true;
+        if (c.b === ball && c.normal.y > 0.5) grounded = true;
+      }
+
+      if (!grounded) control.jumpBlocked = false;
+
+      if (ctx.kb.down('Space') && grounded && !control.jumpBlocked) {
+        body.impulse.y += control.jumpImpulse;
+        control.jumpBlocked = true;
+      }
+    },
+  };
+
+  const canvas = document.getElementById('canvas');
+  const render = new RenderSystem({ em, canvas });
+  const detector = new BruteForceDetector();
+  const physics = new PhysicsSystem({ em, detector });
+
+  const mainScene = new Scene()
+    .addFixed(control)
+    .addFixed(physics)
+    .addRender(render);
+  scenes.push(mainScene);
+
+  const pauseRender = {
+    tick() {
+      const ctx = canvas.getContext('2d');
+      const w = canvas.width;
+      const h = canvas.height;
+
+      ctx.save();
+
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+
+      const text = 'PAUSED';
+      const pad = 0.18;
+
+      const maxW = w * (1 - pad * 2);
+      const maxH = h * (1 - pad * 2);
+
+      const sample = 100;
+      ctx.globalAlpha = 0.55;
+      ctx.font = `800 ${sample}px system-ui, sans-serif`;
+
+      const m = ctx.measureText(text);
+      const textW = m.width || 1;
+      const textH =
+        (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) || sample;
+
+      const scale = Math.min(maxW / textW, maxH / textH);
+      const fontSize = Math.floor(sample * scale);
+
+      ctx.font = `800 ${fontSize}px system-ui, sans-serif`;
+      ctx.fillStyle = '#FFFFFF';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, w / 2, h / 2);
+
+      ctx.restore();
+    },
+  };
+
+  const pauseControl = {
+    input(ctx) {
+      if (ctx.kb.pressed('KeyP') || ctx.kb.pressed('Escape')) {
+        scenes.popLater();
+      }
+    },
+  };
+
+  const pauseScene = new Scene({
+      blocksInput: true,
+      blocksUpdate: true,
+    })
+    .addFixed(pauseControl)
+    .addRender(pauseRender);
+
+  const ctx = context({ kb, world: { width: 1.8, height: 1 } });
+  const scheduler = new Scheduler({ ctx }).start(scenes);
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.em = em;
+  global.render = render;
+  global.physics = physics;
+  global.scheduler = scheduler;
+
+  const text = em.spawn({
+    position: { x: 0.9, y: 0.5 },
+    render: { color: '#DEDEDE', zIndex: 999 },
+    text: {
+      value: 'ARROW KEYS',
+      fit: true,
+      weight: 'bold',
+      alpha: 0.45,
+    },
+  });
+
+  const onKeyDown = () => {
+    window.removeEventListener('keydown', onKeyDown);
+    em.destroyEntity(text);
+  };
+  window.addEventListener('keydown', onKeyDown);
+});
+
+    </script>
+    <a href="../index.html" class="back">←</a>
+  </body>
+</html>

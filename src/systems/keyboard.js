@@ -1,4 +1,4 @@
-export class Keyboard {
+export class KeyboardSystem {
   #down = new Set();
   #pressed = new Set();
   #released = new Set();
@@ -46,6 +46,7 @@ export class Keyboard {
     this.#released.clear();
     this.#dirty.clear();
     this.state.clear();
+    return this;
   }
 
   tick() {
@@ -68,7 +69,7 @@ export class Keyboard {
     this.#released.clear();
   }
 
-  isDown(code) {
+  down(code) {
     return this.#down.has(code);
   }
 

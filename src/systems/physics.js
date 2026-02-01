@@ -1,10 +1,15 @@
 import { registry } from '../components/registry.js';
 import { clamp } from '../lib/clamp.js';
 import { getSleep } from '../lib/sleep.js';
+import { required } from '../modules/required.js';
 import { Vector } from '../modules/vector.js';
 
-const defaults = {
-  solver: {
+export class PhysicsSystem {
+  #cfg = {
+    em: required,
+    detector: required,
+
+    gravity: new Vector(0, -9.8),
     iterations: 20,
     warmStart: true,
     warmStartFactor: 0.8,
@@ -13,24 +18,10 @@ const defaults = {
     slop: 0.005,
     constraintSlop: 0.01,
     sleep: true,
-  },
-  world: {
-    gravity: new Vector(0, -9.8),
-  },
-};
-
-export class PhysicsSystem {
-  #cfg = {
-    solver: { ...defaults.solver },
-    world: { ...defaults.world },
   };
+
   #frame = 0;
   #contacts = new Map();
-
-  #em;
-  #world;
-  #collisions;
-  #detector;
 
   #emitContact = (a, b, tag, normal, penetration) => {
     const slug = b ?? tag;
@@ -45,44 +36,43 @@ export class PhysicsSystem {
     this.#contacts.set(key, data);
   };
 
-  constructor({ em, worldId, detector, ...opts }) {
-    this.#em = em;
-    this.#world = em.getComponent(worldId, 'world');
-    this.#collisions = em.getComponent(worldId, 'collisions');
-    this.#detector = detector;
+  constructor(opts) {
     this.configure(opts);
   }
 
-  configure(patch = {}) {
-    this.#cfg = {
-      solver: { ...this.#cfg.solver, ...(patch.solver ?? {}) },
-      world: { ...this.#cfg.world, ...(patch.world ?? {}) },
-    };
+  configure(patch) {
+    if (patch.em && this.#cfg.em) this.reset();
+    this.#cfg = { ...this.#cfg, ...patch };
     return this;
   }
 
-  tick(dt) {
-    // update time, integrate forces / impulses
-    this.#world.time += dt;
+  reset() {
+    this.#contacts.clear();
+    const em = this.#cfg.em;
+    for (const id of em.query('constraint')) {
+      const c = em.getComponent(id, 'constraint');
+      c.impulse = 0;
+    }
+    return this;
+  }
+
+  tick(ctx, dt) {
+    // integrate forces / impulses
     this.#integrateForces(dt);
     this.#springForces(dt);
     this.#dragForces(dt);
 
     // collision detection
     this.#beginContactFrame();
-    this.#detector.detect({
-      em: this.#em,
-      world: this.#world,
-      emit: this.#emitContact,
-    });
-    this.#endContactFrame();
+    this.#cfg.detector.detect({ em, ctx, emit: this.#emitContact });
+    this.#endContactFrame(ctx);
 
     // gravity correction + constraints
     this.#correctForGravity(dt);
     this.#updateConstraints();
 
     // warm start
-    if (this.#cfg.solver.warmStart) {
+    if (this.#cfg.warmStart) {
       this.#warmStart();
       this.#warmStartConstraints();
     } else {
@@ -91,7 +81,7 @@ export class PhysicsSystem {
 
     // sequential impulse
     this.#preSolveBounce();
-    for (let i = 0; i < this.#cfg.solver.iterations; i++) {
+    for (let i = 0; i < this.#cfg.iterations; i++) {
       this.#solveVelocity();
       this.#solveFriction(dt);
       this.#solvePositionalBias(dt);
@@ -100,15 +90,15 @@ export class PhysicsSystem {
 
     // update position + sleep status
     this.#integrateVelocity(dt);
-    if (this.#cfg.solver.sleep) {
+    if (this.#cfg.sleep) {
       this.#updateSleepBodies(dt);
       this.#updateSleepGroups(dt);
     }
   }
 
   #integrateForces(dt) {
-    const em = this.#em;
-    const gravity = this.#cfg.world.gravity;
+    const em = this.#cfg.em;
+    const gravity = this.#cfg.gravity;
 
     for (const [id, _, body] of em.queryRows('position', 'body')) {
       const sleep = getSleep(em, id);
@@ -120,8 +110,8 @@ export class PhysicsSystem {
 
       body.vel.add(Vector.mul(body.force, body.invMass * dt));
       body.vel.add(Vector.mul(body.impulse, body.invMass));
-      body.force.x = body.force.y = 0;
-      body.impulse.x = body.impulse.y = 0;
+      body.force.set(0, 0);
+      body.impulse.set(0, 0);
 
       if (body.gravity != null) {
         body.vel.add(Vector.mul(body.gravity, dt));
@@ -132,7 +122,7 @@ export class PhysicsSystem {
   }
 
   #springForces(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const id of em.query('spring')) {
       const s = em.getComponent(id, 'spring');
       const a = em.getComponent(s.a, 'body');
@@ -169,7 +159,7 @@ export class PhysicsSystem {
   }
 
   #dragForces(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const id of em.query('position', 'body')) {
       const body = em.getComponent(id, 'body');
       const sleep = getSleep(em, id);
@@ -195,8 +185,8 @@ export class PhysicsSystem {
     this.#frame += 1;
   }
 
-  #endContactFrame() {
-    const events = this.#collisions;
+  #endContactFrame(ctx) {
+    const events = ctx?.collisions;
     if (events) events.length = 0;
 
     for (const [key, c] of this.#contacts) {
@@ -206,8 +196,8 @@ export class PhysicsSystem {
   }
 
   #correctForGravity(dt) {
-    const em = this.#em;
-    const gravity = this.#cfg.world.gravity;
+    const em = this.#cfg.em;
+    const gravity = this.#cfg.gravity;
 
     for (const c of this.#contacts.values()) {
       const a = em.getComponent(c.a, 'body') ?? registry.body();
@@ -245,8 +235,8 @@ export class PhysicsSystem {
   }
 
   #updateConstraints() {
-    const em = this.#em;
-    const constraintSlop = this.#cfg.solver.constraintSlop;
+    const em = this.#cfg.em;
+    const constraintSlop = this.#cfg.constraintSlop;
 
     for (const id of em.query('constraint')) {
       const c = em.getComponent(id, 'constraint');
@@ -269,8 +259,8 @@ export class PhysicsSystem {
   }
 
   #warmStart() {
-    const em = this.#em;
-    const warmStartFactor = this.#cfg.solver.warmStartFactor;
+    const em = this.#cfg.em;
+    const warmStartFactor = this.#cfg.warmStartFactor;
 
     for (const c of this.#contacts.values()) {
       const a = em.getComponent(c.a, 'body');
@@ -298,13 +288,13 @@ export class PhysicsSystem {
   }
 
   #warmStartConstraints() {
-    const em = this.#em;
-    const warmStartFactor = this.#cfg.solver.warmStartFactor;
+    const em = this.#cfg.em;
+    const warmStartFactor = this.#cfg.warmStartFactor;
 
     for (const id of em.query('constraint')) {
-      const c = this.#em.getComponent(id, 'constraint');
-      const a = this.#em.getComponent(c.a, 'body');
-      const b = this.#em.getComponent(c.b, 'body');
+      const c = em.getComponent(id, 'constraint');
+      const a = em.getComponent(c.a, 'body');
+      const b = em.getComponent(c.b, 'body');
       const sleepA = getSleep(em, c.a);
       const sleepB = getSleep(em, c.b);
 
@@ -318,20 +308,21 @@ export class PhysicsSystem {
   }
 
   #clearAccumulated() {
+    const em = this.#cfg.em;
     for (const c of this.#contacts.values()) {
       c.bias = 0;
       c.jn = 0;
       c.jt = 0;
     }
-    for (const id of this.#em.query('constraint')) {
-      const c = this.#em.getComponent(id, 'constraint');
+    for (const id of em.query('constraint')) {
+      const c = em.getComponent(id, 'constraint');
       c.impulse = 0;
     }
   }
 
   #preSolveBounce() {
-    const em = this.#em;
-    const thresh = this.#cfg.solver.restitutionThreshold;
+    const em = this.#cfg.em;
+    const thresh = this.#cfg.restitutionThreshold;
 
     for (const c of this.#contacts.values()) {
       const a = em.getComponent(c.a, 'body') ?? registry.body();
@@ -346,7 +337,7 @@ export class PhysicsSystem {
   }
 
   #solveVelocity() {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const c of this.#contacts.values()) {
       const a = em.getComponent(c.a, 'body') ?? registry.body();
       const b = em.getComponent(c.b, 'body') ?? registry.body();
@@ -379,7 +370,7 @@ export class PhysicsSystem {
   }
 
   #solveFriction() {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const c of this.#contacts.values()) {
       const a = em.getComponent(c.a, 'body') || registry.body();
       const b = em.getComponent(c.b, 'body') || registry.body();
@@ -406,9 +397,9 @@ export class PhysicsSystem {
   }
 
   #solvePositionalBias(dt) {
-    const em = this.#em;
-    const slop = this.#cfg.solver.slop;
-    const baumgarte = this.#cfg.solver.baumgarte;
+    const em = this.#cfg.em;
+    const slop = this.#cfg.slop;
+    const baumgarte = this.#cfg.baumgarte;
 
     for (const c of this.#contacts.values()) {
       if (c.penetration < slop) continue;
@@ -436,7 +427,7 @@ export class PhysicsSystem {
   }
 
   #solveConstraintBias(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const id of em.query('constraint')) {
       const c = em.getComponent(id, 'constraint');
       const a = em.getComponent(c.a, 'body');
@@ -470,7 +461,7 @@ export class PhysicsSystem {
   }
 
   #integrateVelocity(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const [id, pos, body] of em.queryRows('position', 'body')) {
       const sleep = getSleep(em, id);
       if (sleep.isSleeping) continue;
@@ -479,7 +470,7 @@ export class PhysicsSystem {
   }
 
   #updateSleepBodies(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     const rows = em.queryRows('position', 'body', 'sleep');
 
     for (const [_, __, body, sleep] of rows) {
@@ -499,7 +490,7 @@ export class PhysicsSystem {
   }
 
   #updateSleepGroups(dt) {
-    const em = this.#em;
+    const em = this.#cfg.em;
     for (const [_, sleep, group] of em.queryRows('sleep', 'group')) {
       if (sleep.isSleeping) continue;
 

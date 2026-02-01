@@ -1,47 +1,44 @@
-const defaults = {
-  timestep: 1 / 60,
-  panicThreshold: 100,
-  onFixed: null,
-  onFrame: null,
-};
-
 export class Scheduler {
-  #fixed = [];
-  #frame = [];
+  #cfg = {
+    timestep: 1 / 60,
+    panicThreshold: 100,
+    ctx: null,
+  };
 
   #running = false;
   #resumeOnVisible = false;
+  #task = null;
   #rafId = null;
   #lastFrameMs = 0;
   #delta = 0;
 
-  #timestep;
-  #panicThreshold;
-  #onFixed;
-  #onFrame;
-
   tick = (ts) => {
-    if (!this.#running) return;
+    if (!this.#running || !this.#task) return;
 
     const lastFrameMs = this.#lastFrameMs || ts;
     const dt = (ts - lastFrameMs) / 1000;
     this.#lastFrameMs = ts;
     this.#delta += dt;
 
-    let count = 0;
-    while (this.#delta >= this.#timestep) {
-      this.#fixed.forEach((system) => system.tick(this.#timestep));
-      if (this.#onFixed) this.#onFixed(this.#timestep);
-      this.#delta -= this.#timestep;
+    const ctx = this.#cfg.ctx;
+    const time = ctx?.time;
+    if (time) time.frameTime += dt;
+    this.#task.onFrame?.(ctx, dt);
 
-      if (++count >= this.#panicThreshold) {
+    let count = 0;
+    const timestep = this.#cfg.timestep;
+    while (this.#delta >= timestep) {
+      if (time) time.fixedTime += timestep;
+      this.#task.onFixed?.(ctx, timestep);
+
+      this.#delta -= timestep;
+      if (++count >= this.#cfg.panicThreshold) {
         this.#panic();
         break;
       }
     }
 
-    this.#frame.forEach((system) => system.tick(ts));
-    if (this.#onFrame) this.#onFrame(ts);
+    this.#task.onRender?.(ctx, dt);
     this.#rafId = requestAnimationFrame(this.tick);
   };
 
@@ -56,30 +53,29 @@ export class Scheduler {
   };
 
   constructor(opts = {}) {
-    const cfg = { ...defaults, ...opts };
-    this.#timestep = cfg.timestep;
-    this.#panicThreshold = cfg.panicThreshold;
-    this.#onFixed = cfg.onFixed;
-    this.#onFrame = cfg.onFrame;
-
+    this.configure(opts);
     document.addEventListener('visibilitychange', this.#onVisibilityChange);
   }
 
   destroy() {
+    this.stop();
     document.removeEventListener('visibilitychange', this.#onVisibilityChange);
   }
 
-  fixedSystem(system) {
-    this.#fixed.push(system);
+  configure(patch) {
+    this.#cfg = { ...this.#cfg, ...patch };
     return this;
   }
 
-  frameSystem(system) {
-    this.#frame.push(system);
-    return this;
-  }
+  start(task = null) {
+    const newTask = task ?? this.#task;
+    if (this.#task !== newTask) this.stop();
+    this.#task = newTask;
 
-  start() {
+    if (!this.#task) {
+      throw new Error('no animation task provided');
+    }
+
     if (!this.#running) {
       this.#lastFrameMs = 0;
       this.#delta = 0;

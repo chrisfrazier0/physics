@@ -10,6 +10,9 @@
         margin: 0;
         padding: 0;
       }
+      html, body {
+        background: #111111;
+      }
       #canvas {
         display: block;
         width: 100vw;
@@ -43,6 +46,7 @@
     <canvas id="canvas"></canvas>
     <script type="module">
 
+import { context } from '../src/components/context.js';
 import { registry } from '../src/components/registry.js';
 import { BruteForceDetector } from '../src/lib/detector.js';
 import { Scheduler } from '../src/modules/scheduler.js';
@@ -57,31 +61,7 @@ const ready = (fn) =>
     : document.addEventListener('DOMContentLoaded', () => fn(window));
 
 ready((global) => {
-  const canvas = document.getElementById('canvas');
   const em = new EntityManager(registry);
-  const worldId = em.spawn({ world: { width: 1.8, height: 1 } });
-
-  const render = new RenderSystem({ em, worldId, canvas });
-  const detector = new BruteForceDetector();
-  const physics = new PhysicsSystem({
-    em,
-    worldId,
-    detector,
-    solver: { slop: 0.002 },
-  });
-
-  const scheduler = new Scheduler()
-    .fixedSystem(physics)
-    .frameSystem(render)
-    .start();
-
-  // expose to browser console for debugging
-  global.registry = registry;
-  global.em = em;
-  global.render = render;
-  global.physics = physics;
-  global.scheduler = scheduler;
-
   const invMass = 1 / 0.035;
   const defaults = {
     aabb: { halfWidth: 0.04, halfHeight: 0.04 },
@@ -111,6 +91,28 @@ ready((global) => {
       mu: Math.sqrt(0.2),
     },
   });
+
+  const canvas = document.getElementById('canvas');
+  const render = new RenderSystem({ em, canvas });
+  const detector = new BruteForceDetector();
+  const physics = new PhysicsSystem({
+    em,
+    detector,
+    slop: 0.002,
+  });
+
+  const ctx = context({ world: { width: 1.8, height: 1 } });
+  const scheduler = new Scheduler().start({
+    onFixed: (_, dt) => physics.tick(ctx, dt),
+    onRender: () => render.tick(ctx),
+  });
+
+  // expose to browser console for debugging
+  global.registry = registry;
+  global.em = em;
+  global.render = render;
+  global.physics = physics;
+  global.scheduler = scheduler;
 });
 
     </script>

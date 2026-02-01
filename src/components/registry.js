@@ -1,15 +1,6 @@
 import { Vector } from '../modules/vector.js';
 
 export const registry = {
-  world: (o = {}) => ({
-    width: 1,
-    height: 1,
-    time: 0,
-    ...o,
-  }),
-
-  collisions: (c = []) => Array.from(c),
-
   position: (v = new Vector(0, 0)) =>
     v instanceof Vector ? v : new Vector(v.x ?? 0, v.y ?? 0),
 

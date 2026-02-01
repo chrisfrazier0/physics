@@ -16,6 +16,7 @@ export class Vector {
   set(x, y) {
     this.x = x;
     this.y = y;
+    return this;
   }
 
   get isZero() {
@@ -57,8 +58,7 @@ export class Vector {
       this.x /= scalar;
       this.y /= scalar;
     } else {
-      this.x = FALLBACK_NORMAL.x;
-      this.y = FALLBACK_NORMAL.y;
+      this.set(FALLBACK_NORMAL.x, FALLBACK_NORMAL.y);
     }
     return this;
   }
