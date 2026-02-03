@@ -106,10 +106,14 @@ export class RenderSystem {
     ctx.stroke();
   }
 
-  #drawCircle(ctx, id, render, pos, circle) {
+  #drawCircle(ctx, context, dt, id, render, pos, circle) {
     const x = this.#sx(pos.x + render.offset.x);
     const y = this.#sy(pos.y + render.offset.y);
     const r = circle.radius * this.#zoom;
+
+    ctx.save();
+    this.#applySquishX(ctx, id, x, y);
+    this.#applySquishY(ctx, context, dt, id, x, y);
 
     ctx.lineWidth = 1;
     ctx.fillStyle = render.color;
@@ -120,6 +124,83 @@ export class RenderSystem {
 
     if (this.#shouldWire(id)) ctx.stroke();
     else ctx.fill();
+
+    const face = this.#cfg.em.getComponent(id, 'face');
+    if (face) this.#drawFace(ctx, pos, circle, face);
+    ctx.restore();
+  }
+
+  #applySquishX(ctx, id, x, y) {
+    const em = this.#cfg.em;
+    const squish = em.getComponent(id, 'squishX');
+    if (!squish?.enabled) return;
+
+    const body = em.getComponent(id, 'body');
+    if (!body) return;
+
+    const v = Math.abs(body.vel.x);
+    const vEff = Math.max(0, v - squish.deadzone);
+
+    // smoothstep
+    const t = Math.min(1, vEff / squish.vRef);
+    const tt = t * t * (3 - 2 * t);
+
+    const sx = 1 + squish.amount * tt;
+    const sy = 1 / sx;
+    ctx.translate(x, y);
+    ctx.scale(sx, sy);
+    ctx.translate(-x, -y);
+  }
+
+  #applySquishY(ctx, context, dt, id, x, y) {
+    const em = this.#cfg.em;
+    const squish = em.getComponent(id, 'squishY');
+    if (!squish?.enabled) return;
+
+    const body = em.getComponent(id, 'body');
+    if (!body || !body.preVel) return;
+
+    let grounded = false;
+    const collisions = context?.collisions ?? [];
+    for (const c of collisions) {
+      if (
+        (c.a === id && c.normal.y < -0.5) ||
+        (c.b === id && c.normal.y > 0.5)
+      ) {
+        grounded = true;
+        break;
+      }
+    }
+
+    if (grounded && !squish._wasGrounded) {
+      if (body.preVel.y < 0) {
+        const strength = Math.min(1, -body.preVel.y / squish.vRef);
+        const active = squish._t > 0;
+
+        if (!active) {
+          squish._strength = strength;
+          squish._t = squish.hold;
+        } else if (strength > squish._strength) {
+          squish._strength = strength;
+          squish._t = squish.hold;
+        }
+      }
+    }
+
+    if (squish._t > 0) squish._t = Math.max(0, squish._t - dt);
+    else squish._strength = 0;
+    squish._wasGrounded = grounded;
+
+    // smoothstep
+    const p = squish._t > 0 ? squish._t / squish.hold : 0; // 1..0
+    const pp = p * p * (3 - 2 * p);
+    const amt = squish.amount * squish._strength * pp;
+
+    const sx = 1 + amt;
+    const sy = Math.max(0.35, 1 - amt);
+    ctx.translate(x, y);
+    ctx.scale(sx, sy);
+    ctx.translate(-x, -y);
   }
 
   #drawAabb(ctx, id, render, pos, box) {
@@ -141,6 +222,71 @@ export class RenderSystem {
     else ctx.fillRect(x, yTop, w, h);
   }
 
+  #drawFace(ctx, pos, circle, face) {
+    const baseX = this.#sx(pos.x);
+    const baseY = this.#sy(pos.y);
+    const rPx = circle.radius * this.#zoom;
+
+    if (face.roll) {
+      ctx.save();
+      ctx.translate(baseX, baseY);
+      ctx.rotate(-face.rollAngle);
+      ctx.translate(-baseX, -baseY);
+    }
+
+    const oxW = face.nx * face.innerFactor * circle.radius;
+    const oyW = face.ny * face.innerFactor * circle.radius;
+    const cx = this.#sx(pos.x + oxW);
+    const cy = this.#sy(pos.y + oyW);
+
+    // scale size based on radius
+    const eyeX = rPx * 0.35;
+    const eyeY = rPx * 0.18;
+    const eyeR0 = rPx * 0.15;
+
+    const eyeR = face.hover ? eyeR0 * 0.75 : eyeR0;
+    const ry = eyeR * (1 - face.blink);
+
+    const drawEye = (x, y) => {
+      if (face.hover) {
+        ctx.fillStyle = face.white;
+        ctx.beginPath();
+        ctx.arc(x, y, eyeR + eyeR0 * 0.55, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = face.eyeColor;
+      ctx.beginPath();
+      ctx.ellipse(x, y, eyeR, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    drawEye(cx - eyeX, cy - eyeY);
+    drawEye(cx + eyeX, cy - eyeY);
+
+    ctx.strokeStyle = face.mouthColor;
+    ctx.fillStyle = face.mouthColor;
+    ctx.lineCap = 'round';
+    ctx.lineWidth = rPx * 0.06;
+
+    if (!face.hover) {
+      const mw = rPx * 0.38;
+      const my = cy + rPx * 0.2;
+      ctx.beginPath();
+      ctx.moveTo(cx - mw * 0.5, my);
+      ctx.lineTo(cx + mw * 0.5, my);
+      ctx.stroke();
+    } else {
+      const mr = rPx * 0.22;
+      const my = cy + rPx * 0.18;
+      ctx.beginPath();
+      ctx.arc(cx, my, mr, 0, Math.PI, false);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    if (face.roll) ctx.restore();
+  }
+
   resizeCanvas(world) {
     const c = this.#cfg.canvas;
     c.width = c.clientWidth;
@@ -156,7 +302,7 @@ export class RenderSystem {
     this.#oy = (c.height + worldPxH) / 2;
   }
 
-  tick(context) {
+  tick(context, dt) {
     const em = this.#cfg.em;
     const canvas = this.#cfg.canvas;
     const world = context?.world ?? { width: 1, height: 1 };
@@ -247,7 +393,7 @@ export class RenderSystem {
 
       for (let i = 0; i < bucket.circles.length; i++) {
         const { id, render, pos, circle } = bucket.circles[i];
-        this.#drawCircle(ctx, id, render, pos, circle);
+        this.#drawCircle(ctx, context, dt, id, render, pos, circle);
       }
 
       for (let i = 0; i < bucket.texts.length; i++) {

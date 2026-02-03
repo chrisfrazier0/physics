@@ -118,6 +118,10 @@ export class PhysicsSystem {
       } else if (body.invMass !== 0) {
         body.vel.add(Vector.mul(gravity, dt));
       }
+
+      // cache pre-solve velocity
+      if (!body.preVel) body.preVel = body.vel.clone();
+      else body.preVel.set(body.vel.x, body.vel.y);
     }
   }
 

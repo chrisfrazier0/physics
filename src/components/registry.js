@@ -92,4 +92,53 @@ export const registry = {
     damping: 0,
     ...o,
   }),
+
+  face: (o = {}) => ({
+    // colors
+    eyeColor: '#2A2927',
+    mouthColor: '#2A2927',
+    white: '#DEDEDE',
+
+    // tuning
+    innerFactor: 0.3,
+    ease: 18,
+    maxN: 1.0,
+
+    // blink timing
+    blinkPeriod: 3.8,
+    blinkDur: 0.13,
+    blinkT: 0,
+    blink: 0, // 0 open, 1 closed
+
+    // roll illusion
+    roll: false,
+    rollAngle: 0,
+    rollFactor: 1.0,
+
+    // state
+    hover: false,
+    nx: 0,
+    ny: 0,
+    ...o,
+  }),
+
+  squishX: (o = {}) => ({
+    enabled: true,
+    amount: 0.25,
+    vRef: 2.0,
+    deadzone: 0.05,
+    ...o,
+  }),
+
+  squishY: (o = {}) => ({
+    enabled: true,
+    amount: 0.3,
+    vRef: 2.0,
+    hold: 0.2,
+
+    _t: 0,
+    _strength: 0,
+    _wasGrounded: false,
+    ...o,
+  }),
 };

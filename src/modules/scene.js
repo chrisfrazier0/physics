@@ -12,7 +12,7 @@ export class Scene {
   constructor(opts = {}) {
     this.blocksInput = opts.blocksInput ?? this.blocksInput;
     this.blocksUpdate = opts.blocksUpdate ?? this.blocksUpdate;
-    this.opaque = opts.opaque?? this.opaque;
+    this.opaque = opts.opaque ?? this.opaque;
   }
 
   addFrame(sys)  { this.#frame.push(sys);  return this; }

@@ -19,6 +19,10 @@ export class Vector {
     return this;
   }
 
+  clone() {
+    return new Vector(this.x, this.y);
+  }
+
   get isZero() {
     return this.x === 0 && this.y === 0;
   }

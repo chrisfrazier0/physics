@@ -15,4 +15,10 @@ export const context = (opts = {}) => ({
   },
   collisions: opts.collisions ?? [],
   kb: opts.kb ?? null,
+  pointer: {
+    px: 0, py: 0, // pixel
+    x: 0, y: 0, // world
+    inside: false,
+    ...(opts.pointer ?? {}),
+  },
 });

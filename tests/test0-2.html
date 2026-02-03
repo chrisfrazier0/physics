@@ -56,6 +56,8 @@ import { SceneManager } from '../src/modules/scene_manager.js';
 import { RenderSystem } from '../src/systems/render.js';
 import { PhysicsSystem } from '../src/systems/physics.js';
 import { KeyboardSystem } from '../src/systems/keyboard.js';
+import { PointerSystem } from '../src/systems/pointer.js';
+import { FaceSystem } from '../src/systems/face.js';
 
 const ready = (fn) =>
   document.readyState !== 'loading'
@@ -63,8 +65,12 @@ const ready = (fn) =>
     : document.addEventListener('DOMContentLoaded', () => fn(window));
 
 ready((global) => {
+  const canvas = document.getElementById('canvas');
   const kb = new KeyboardSystem();
-  const scenes = new SceneManager().addFixed(kb);
+  const pointer = new PointerSystem({ canvas });
+  const scenes = new SceneManager()
+    .addFixed(kb)
+    .addFixed(pointer);
 
   const em = new EntityManager(registry);
   const ball = em.spawn({
@@ -78,7 +84,10 @@ ready((global) => {
     },
     collider: {},
     circle: { radius: 0.035 },
-    render: { color: 'hsl(40,60%,50%)', zIndex: 2 },
+    face: { roll: true, rollFactor: 0.55 },
+    squishX: { vRef: 1.4, amount: 0.1 },
+    squishY: { vRef: 2.05 },
+    render: { color: 'hsl(40,60%,50%)', zIndex: -1 },
     sleep: {},
   });
 
@@ -95,7 +104,30 @@ ready((global) => {
   const control = {
     moveForce: 6,
     jumpImpulse: 2.6,
-    jumpBlocked: false,
+    smileHold: 0.2,
+
+    _grounded: false,
+    _jumpBlocked: false,
+    _smileT: 0,
+
+    tick(ctx, dt) {
+      control._grounded = false;
+      for (const c of ctx.collisions) {
+        if (c.a === ball && c.normal.y < -0.5) { control._grounded = true; break; }
+        if (c.b === ball && c.normal.y > 0.5) { control._grounded = true; break; }
+      }
+
+      const face = em.getComponent(ball, 'face');
+      if (!control._grounded) {
+        control._jumpBlocked = false;
+        control._smileT = control.smileHold;
+        face.hover = true;
+        return;
+      }
+
+      control._smileT = Math.max(control._smileT - dt, 0);
+      if (control._smileT) face.hover = true;
+    },
 
     input(ctx) {
       if (ctx.kb.pressed('KeyP')) {
@@ -114,29 +146,22 @@ ready((global) => {
       if (ctx.kb.down('ArrowLeft')) body.force.x -= control.moveForce;
       if (ctx.kb.down('ArrowRight')) body.force.x += control.moveForce;
 
-      let grounded = false;
-      for (const c of ctx.collisions) {
-        if (c.a === ball && c.normal.y < -0.5) grounded = true;
-        if (c.b === ball && c.normal.y > 0.5) grounded = true;
-      }
-
-      if (!grounded) control.jumpBlocked = false;
-
-      if (ctx.kb.down('Space') && grounded && !control.jumpBlocked) {
+      if (ctx.kb.down('Space') && control._grounded && !control._jumpBlocked) {
         body.impulse.y += control.jumpImpulse;
-        control.jumpBlocked = true;
+        control._jumpBlocked = true;
       }
     },
   };
 
-  const canvas = document.getElementById('canvas');
   const render = new RenderSystem({ em, canvas });
   const detector = new BruteForceDetector();
   const physics = new PhysicsSystem({ em, detector });
+  const face = new FaceSystem({ em });
 
   const mainScene = new Scene()
-    .addFixed(control)
     .addFixed(physics)
+    .addFixed(face)
+    .addFixed(control)
     .addRender(render);
   scenes.push(mainScene);
 
@@ -195,7 +220,11 @@ ready((global) => {
     .addFixed(pauseControl)
     .addRender(pauseRender);
 
-  const ctx = context({ kb, world: { width: 1.8, height: 1 } });
+  const ctx = context({
+    kb,
+    world: { width: 1.8, height: 1 },
+    pointer: { x: 0.3, y: 0.5 },
+  });
   const scheduler = new Scheduler({ ctx }).start(scenes);
 
   // expose to browser console for debugging
