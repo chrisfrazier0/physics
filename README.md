@@ -4,7 +4,7 @@
 
 A small, dependency-free **2D physics engine** (AABB + circles) with a lightweight ECS toolkit (EntityManager + Scenes).
 
-[Live demo / tests](https://chris.frazier.software/physics/)&nbsp;&nbsp;•&nbsp;&nbsp;[Source](https://github.com/chrisfrazier0/physics)
+[Live demo / tests](https://lab.frazier.software/physics/)&nbsp;&nbsp;•&nbsp;&nbsp;[Source](https://github.com/chrisfrazier0/physics)
 
 <!-- Badges -->
 
@@ -45,7 +45,7 @@ This repo is primarily a **physics engine**, but it also includes a tiny set of 
 
 Tests are implemented as small standalone HTML files (one test per file) and are deployed here:
 
-- https://chris.frazier.software/physics/
+- https://lab.frazier.software/physics/
 
 ## Philosophy
 
